@@ -67,14 +67,8 @@
     box.innerHTML = `
       <div class="verdict g-${g}">${diag.color} ${diag.titulo}<br><span style="font-size:.8rem;font-weight:600">Gravedad: ${g}</span></div>
 
-      <div class="metric"><span>Refrigerante</span><b>${calc.ref}</b></div>
-      <div class="metric"><span>Temp. evaporación</span><b>${fx(calc.tEvap)} °C</b></div>
-      <div class="metric"><span>Temp. condensación</span><b>${fx(calc.tCond)} °C</b></div>
-      <div class="metric"><span>Recalentamiento (SH)</span><b>${fx(calc.superheat)} K</b></div>
-      <div class="metric"><span>Subenfriamiento (SC)</span><b>${fx(calc.subcooling)} K</b></div>
-      <div class="metric"><span>Lift térmico</span><b>${fx(calc.lift)} K</b></div>
-      <div class="metric"><span>ΔT evaporador</span><b>${fx(calc.dtEvap)} K</b></div>
-      <div class="metric"><span>ΔT condensador</span><b>${fx(calc.dtCond)} K</b></div>
+      <h2 style="margin-top:4px">Valores de funcionamiento</h2>
+      ${tablaResultado(calc, diag)}
 
       <h2 style="margin-top:16px">Posibles causas</h2>
       ${causasHTML}
@@ -101,6 +95,71 @@
     box.classList.remove('hidden');
   }
 
+  /* SH/SC son DIFERENCIAS de temperatura: numéricamente 1 K = 1 °C, así que
+     el mismo valor sirve para ambas unidades. Se muestran las dos. */
+  const kc = v => (isNaN(v) || v === null) ? '—' : `${v.toFixed(1)} K / ${v.toFixed(1)} °C`;
+
+  /* ---------- Tabla comparativa del RESULTADO (pantalla final) ----------
+     Columna 1: valores correctos para un funcionamiento normal.
+     Columna 2: valores medidos/calculados, en verde si están dentro de los
+     valores correctos y en rojo si están fuera. */
+  function tablaResultado(calc, diag) {
+    const u = diag.umbrales;
+    const filas = [];
+    function fila(nombre, correcto, medido, estado) {
+      const cls = (estado === null || estado === undefined) ? '' : (estado ? 'cmp-ok' : 'cmp-bad');
+      filas.push(`<tr><td>${nombre}</td><td>${correcto}</td><td class="${cls}">${medido}</td></tr>`);
+    }
+
+    // Refrigerante — informativo, sin rango
+    fila('Refrigerante', '—', calc.ref, null);
+
+    // Temp. evaporación — referida al aire interior de retorno (evap 6–16 K por debajo)
+    let evapRef = 'según aplicación', evapOk = null;
+    if (!isNaN(calc.tInt)) {
+      const lo = calc.tInt - 16, hi = calc.tInt - 6;
+      evapRef = `${Math.round(lo)}…${Math.round(hi)} °C`;
+      evapOk = (calc.tEvap >= lo && calc.tEvap <= hi);
+    }
+    fila('Temp. evaporación', evapRef, fx(calc.tEvap) + ' °C', evapOk);
+
+    // Temp. condensación — referida al aire exterior (condensa 8–22 K por encima)
+    let condRef = 'ambiente +8…+22 °C', condOk = null;
+    if (!isNaN(calc.tExt)) {
+      const lo = calc.tExt + 8, hi = calc.tExt + 22;
+      condRef = `${Math.round(lo)}…${Math.round(hi)} °C`;
+      condOk = (calc.tCond >= lo && calc.tCond <= hi);
+    }
+    fila('Temp. condensación', condRef, fx(calc.tCond) + ' °C', condOk);
+
+    // Recalentamiento (SH) — rango del dispositivo/refrigerante
+    fila('Recalentamiento (SH)', `${u.shBajo}–${u.shAlto} K / °C`, kc(calc.superheat),
+         (!isNaN(calc.superheat)) ? (calc.superheat >= u.shBajo && calc.superheat <= u.shAlto) : null);
+
+    // Subenfriamiento (SC)
+    fila('Subenfriamiento (SC)', `${u.scBajo}–${u.scAlto} K / °C`, kc(calc.subcooling),
+         (!isNaN(calc.subcooling)) ? (calc.subcooling >= u.scBajo && calc.subcooling <= u.scAlto) : null);
+
+    // Lift térmico — muy dependiente de la aplicación: informativo, sin color
+    fila('Lift térmico', 'según aplicación', fx(calc.lift) + ' K', null);
+
+    // ΔT evaporador (aire) — rango amplio 4–16 K
+    let dtEvOk = null;
+    if (!isNaN(calc.dtEvap)) dtEvOk = (calc.dtEvap >= 4 && calc.dtEvap <= 16);
+    fila('ΔT evaporador', '4–16 K', !isNaN(calc.dtEvap) ? fx(calc.dtEvap) + ' K' : '—', dtEvOk);
+
+    // ΔT condensador — 6–22 K sobre ambiente
+    let dtCoOk = null;
+    if (!isNaN(calc.dtCond)) dtCoOk = (calc.dtCond >= 6 && calc.dtCond <= 22);
+    fila('ΔT condensador', '6–22 K', !isNaN(calc.dtCond) ? fx(calc.dtCond) + ' K' : '—', dtCoOk);
+
+    return `<table class="tabla-comp">
+        <thead><tr><th>Parámetro</th><th>Valor correcto</th><th>Medido / calculado</th></tr></thead>
+        <tbody>${filas.join('')}</tbody>
+      </table>
+      <div class="hint">Fondo verde = dentro de los valores para un correcto funcionamiento · rojo = fuera de rango. Rangos orientativos; prevalecen las especificaciones del fabricante.</div>`;
+  }
+
   /* ---------- Tabla de referencia (Paso 3) ----------
      Ayuda visual: rango normal de SH/SC para el refrigerante y dispositivo
      de expansión seleccionados, antes de introducir ninguna medida. */
@@ -113,8 +172,8 @@
       <table class="tabla-ref">
         <thead><tr><th>Parámetro (valores normales)</th><th>Rango correcto</th></tr></thead>
         <tbody>
-          <tr><td>Recalentamiento (SH)</td><td>${u.shBajo}–${u.shAlto} K</td></tr>
-          <tr><td>Subenfriamiento (SC)</td><td>${u.scBajo}–${u.scAlto} K</td></tr>
+          <tr><td>Recalentamiento (SH)</td><td>${u.shBajo}–${u.shAlto} K / °C</td></tr>
+          <tr><td>Subenfriamiento (SC)</td><td>${u.scBajo}–${u.scAlto} K / °C</td></tr>
           ${m ? `<tr><td>Glide de ${ref}</td><td>${m.glide_K} K</td></tr>` : ''}
         </tbody>
       </table>
@@ -151,12 +210,12 @@
     }
 
     const okSH = d.shCalc != null && !isNaN(d.shCalc) ? (d.shCalc >= d.shObjetivo[0] && d.shCalc <= d.shObjetivo[1]) : null;
-    fila('Recalentamiento (SH)', d.shObjetivo[0] + '–' + d.shObjetivo[1] + ' K',
-         (d.shCalc != null && !isNaN(d.shCalc)) ? d.shCalc.toFixed(1) + ' K' : '—', okSH);
+    fila('Recalentamiento (SH)', d.shObjetivo[0] + '–' + d.shObjetivo[1] + ' K / °C',
+         (d.shCalc != null && !isNaN(d.shCalc)) ? d.shCalc.toFixed(1) + ' K / ' + d.shCalc.toFixed(1) + ' °C' : '—', okSH);
 
     const okSC = d.scCalc != null && !isNaN(d.scCalc) ? (d.scCalc >= d.scObjetivo[0] && d.scCalc <= d.scObjetivo[1]) : null;
-    fila('Subenfriamiento (SC)', d.scObjetivo[0] + '–' + d.scObjetivo[1] + ' K',
-         (d.scCalc != null && !isNaN(d.scCalc)) ? d.scCalc.toFixed(1) + ' K' : '—', okSC);
+    fila('Subenfriamiento (SC)', d.scObjetivo[0] + '–' + d.scObjetivo[1] + ' K / °C',
+         (d.scCalc != null && !isNaN(d.scCalc)) ? d.scCalc.toFixed(1) + ' K / ' + d.scCalc.toFixed(1) + ' °C' : '—', okSC);
 
     const nota = hayReferencia
       ? '<div class="hint">Verde = dentro de los valores correctos de funcionamiento · Rojo = fuera de rango.</div>'
