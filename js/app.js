@@ -6,6 +6,8 @@
   const $ = UI.$;
   let ultimo = null;     // {calc, diag, carga, desv, entrada} para historial/PDF
   let TRAMOS = [];       // [{mm, len, gm}]
+  let equipoActual = null; // ficha del equipo reconocida/guardada en EquipoDB
+  let timerModelo = null;
 
   /* ---------- Init ---------- */
   async function init() {
@@ -37,7 +39,7 @@
     // Carga: tramos
     poblarDiametros();
     $('btnAddTramo').onclick = addTramo;
-    ['cBase','cFree','cExtraUds'].forEach(id => $(id).addEventListener('input', pintarCarga));
+    ['cBase','cFree','cExtraUds'].forEach(id => $(id).addEventListener('input', () => { pintarCarga(); renderComparativa(); }));
     renderTramos();
 
     // Ajustes
@@ -51,13 +53,21 @@
     };
 
     $('ref').onchange = () => {
-      actualizarRefInfo(); liveSat();
+      actualizarRefInfo(); liveSat(); renderComparativa();
       // Los g/m dependen de la densidad del refrigerante: recalcular tramos.
       TRAMOS.forEach(t => t.gm = Charge.gPorMetro(t.mm, $('ref').value));
       renderTramos();
     };
     $('tipoEquipo').onchange = actualizarGuiaDisp;
+    $('dispositivo').onchange = () => { actualizarRefInfo(); renderComparativa(); };
     ['pbaja','palta','ubaja','ualta','relbaja','relalta'].forEach(id => $(id).addEventListener('input', liveSat));
+
+    // Reconocimiento de equipo por modelo (paso 1)
+    ['modeloInt','modeloExt'].forEach(id => $(id).addEventListener('input', () => {
+      clearTimeout(timerModelo);
+      timerModelo = setTimeout(buscarEquipo, 500);
+    }));
+    $('btnGuardarFicha').onclick = () => guardarFicha(false);
 
     // Nav inferior
     document.querySelectorAll('.nav button').forEach(b =>
@@ -85,6 +95,8 @@
   function actualizarRefInfo() {
     const m = PT.meta($('ref').value);
     $('refInfo').textContent = m ? `${m.name} · ${m.type} · glide ${m.glide_K} K · ${m.safety_class}` : '';
+    const box = $('tablaRefBox');
+    if (box) box.innerHTML = UI.renderTablaReferencia($('ref').value, $('dispositivo').value);
   }
   function actualizarGuiaDisp() {
     $('dispGuia').textContent = UI.textoGuiaDispositivo($('tipoEquipo').value);
@@ -97,8 +109,101 @@
     [1,2,3,4].forEach(i => $('paso' + i).classList.toggle('hidden', i !== n));
     $('resultado').classList.add('hidden');
     document.querySelectorAll('#steps .s').forEach((s, i) => s.classList.toggle('on', i < n));
-    if (n === 4) pintarCarga();
+    if (n === 3) actualizarRefInfo();
+    if (n === 4) { pintarCarga(); renderComparativa(); }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* ---------- Reconocimiento de equipo (EquipoDB) ---------- */
+  function buscarEquipo() {
+    const mi = $('modeloInt').value.trim();
+    const me = $('modeloExt').value.trim();
+    const hint = $('equipoLookupHint');
+    if (!mi && !me) { hint.innerHTML = ''; equipoActual = null; return; }
+    hint.textContent = 'Buscando en nuestra base de datos…';
+    EquipoDB.buscar(me || mi, mi, me).then(rec => {
+      if (rec) {
+        equipoActual = rec;
+        const fecha = rec.fecha ? new Date(rec.fecha).toLocaleDateString('es-ES') : '';
+        hint.innerHTML = '✅ Equipo reconocido' + (fecha ? ' (ficha guardada el ' + fecha + ')' : '') +
+          '. Datos rellenados en el paso 2.';
+        if (rec.tipoMaquina) $('tipoEquipo').value = rec.tipoMaquina;
+        if (rec.refrigerante) $('ref').value = rec.refrigerante;
+        if (rec.dispositivo) $('dispositivo').value = rec.dispositivo;
+        if (rec.fabricante) $('fabricante').value = rec.fabricante;
+        if (rec.cargaBase != null) $('cBase').value = rec.cargaBase;
+        if (rec.longitudSinRecarga != null) $('cFree').value = rec.longitudSinRecarga;
+        actualizarRefInfo(); actualizarGuiaDisp(); pintarCarga(); renderComparativa();
+      } else {
+        equipoActual = null;
+        const q = encodeURIComponent(((me || '') + ' ' + (mi || '')).trim() + ' ficha técnica refrigerante carga gas');
+        hint.innerHTML = 'No encontrado en nuestra base de datos. ' +
+          '<a href="https://www.google.com/search?q=' + q + '" target="_blank" rel="noopener">Buscar en internet ↗</a>' +
+          ' e introduce los datos manualmente en el paso 2 (luego pulsa «Guardar ficha del equipo»).';
+      }
+    }).catch(() => { hint.textContent = ''; });
+  }
+
+  function fichaDesdeFormulario() {
+    const mi = $('modeloInt').value.trim();
+    const me = $('modeloExt').value.trim();
+    if (!mi && !me) return null;
+    return {
+      modelo: (me || mi).toUpperCase(),
+      modeloInterior: mi, modeloExterior: me,
+      fabricante: $('fabricante').value.trim(),
+      tipoMaquina: $('tipoEquipo').value,
+      refrigerante: $('ref').value,
+      dispositivo: $('dispositivo').value,
+      cargaBase: parseFloat($('cBase').value) || null,
+      longitudSinRecarga: ($('cFree').value !== '' ? parseFloat($('cFree').value) : null),
+      fecha: new Date().toISOString(),
+      fuente: 'manual'
+    };
+  }
+  async function guardarFicha(silencioso) {
+    const rec = fichaDesdeFormulario();
+    if (!rec) {
+      if (!silencioso) alert('Indica al menos el modelo de la unidad interior o exterior en el paso 1 para poder guardar la ficha.');
+      return;
+    }
+    await EquipoDB.guardar(rec);
+    equipoActual = rec;
+    const hint = $('fichaHint');
+    if (hint) hint.textContent = '✅ Ficha guardada en nuestra base de datos. La próxima vez que introduzcas este modelo se rellenará automáticamente.';
+    renderComparativa();
+  }
+
+  /* ---------- Vista previa en vivo de SH/SC (para la tabla comparativa) ---------- */
+  function previewCalc() {
+    const pBajaAbs = PT.aBarAbs(parseFloat($('pbaja').value), $('ubaja').value, $('relbaja').checked);
+    const pAltaAbs = PT.aBarAbs(parseFloat($('palta').value), $('ualta').value, $('relalta').checked);
+    const tAsp = parseFloat($('tasp').value), tLiq = parseFloat($('tliq').value);
+    if (isNaN(pBajaAbs) || isNaN(pAltaAbs) || isNaN(tAsp) || isNaN(tLiq)) return null;
+    try {
+      return Calculator.calcular({
+        ref: $('ref').value, dispositivo: $('dispositivo').value,
+        pBaja: parseFloat($('pbaja').value), unidadBaja: $('ubaja').value, relativaBaja: $('relbaja').checked,
+        pAlta: parseFloat($('palta').value), unidadAlta: $('ualta').value, relativaAlta: $('relalta').checked,
+        tAsp, tLiq, tExt: parseFloat($('text').value), tInt: parseFloat($('tint').value)
+      });
+    } catch (e) { return null; }
+  }
+
+  function renderComparativa() {
+    const box = $('tablaCompBox');
+    if (!box) return;
+    const u = Diagnosis.umbrales($('dispositivo').value);
+    const calc = previewCalc();
+    const c = cargaActual();
+    box.innerHTML = UI.renderTablaComparativa({
+      equipoRef: equipoActual,
+      cBaseIntro: $('cBase').value !== '' ? parseFloat($('cBase').value) : null,
+      cFreeIntro: $('cFree').value !== '' ? parseFloat($('cFree').value) : null,
+      cargaNominal: c ? c.total : null,
+      shObjetivo: [u.shBajo, u.shAlto], scObjetivo: [u.scBajo, u.scAlto],
+      shCalc: calc ? calc.superheat : null, scCalc: calc ? calc.subcooling : null
+    });
   }
 
   /* ---------- Paso 4: tramos y carga ---------- */
@@ -241,6 +346,10 @@
     const carga = cargaActual();
     const desv = Charge.desvio(calc, diag, dispositivo, carga ? carga.total : null, $('esVRF').checked);
     ultimo = { calc, diag, entrada, carga, desv };
+
+    // Guardar/actualizar automáticamente la ficha del equipo si se indicó un modelo,
+    // para reconocerlo la próxima vez sin tener que volver a introducir sus datos.
+    guardarFicha(true);
 
     UI.renderResultado($('resultado'), calc, diag, avisos, PT.meta(ref), carga, desv);
     $('btnNuevo').onclick = () => { mostrarPaso(1); resetChecklist(); };
