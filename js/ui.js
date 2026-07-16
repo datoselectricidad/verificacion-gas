@@ -160,6 +160,32 @@
       <div class="hint">Fondo verde = dentro de los valores para un correcto funcionamiento · rojo = fuera de rango. Rangos orientativos; prevalecen las especificaciones del fabricante.</div>`;
   }
 
+  /* ---------- Ficha-resumen del equipo (Paso 1) ----------
+     Al reconocer el modelo se muestran de un vistazo los datos técnicos:
+     tipo, refrigerante, dispositivo, SH/SC objetivo, glide, carga base y
+     longitud de circuito sin recarga. */
+  function renderResumenEquipo(rec) {
+    if (!rec) return '';
+    const nombresDisp = { txv: 'TXV (termostática)', eev: 'EEV (electrónica)', capilar: 'Capilar / orificio fijo', desconocido: 'No definido' };
+    const u = global.Diagnosis ? global.Diagnosis.umbrales(rec.dispositivo) : null;
+    const m = (global.PT && rec.refrigerante) ? global.PT.meta(rec.refrigerante) : null;
+    const filas = [];
+    const f = (k, v) => filas.push(`<tr><td>${k}</td><td>${v}</td></tr>`);
+    f('Tipo de equipo', rec.tipoMaquina || '—');
+    f('Refrigerante', rec.refrigerante || '—');
+    f('Dispositivo de expansión', nombresDisp[rec.dispositivo] || rec.dispositivo || '—');
+    f('Recalentamiento (SH)', u ? `${u.shBajo}–${u.shAlto} K / °C` : '—');
+    f('Subenfriamiento (SC)', u ? `${u.scBajo}–${u.scAlto} K / °C` : '—');
+    f('Glide del refrigerante', m ? `${m.glide_K} K` : '—');
+    f('Carga base de fábrica', rec.cargaBase != null ? `${Math.round(rec.cargaBase)} g` : '—');
+    f('Longitud del circuito sin recarga', rec.longitudSinRecarga != null ? `${rec.longitudSinRecarga} m` : '—');
+    return `<table class="tabla-ref" style="margin-top:6px">
+        <thead><tr><th>Ficha del equipo</th><th>Valor</th></tr></thead>
+        <tbody>${filas.join('')}</tbody>
+      </table>
+      <div class="hint">Datos recuperados de nuestra base de datos. SH, SC y glide se derivan del refrigerante y el dispositivo de expansión. Se rellenan automáticamente en los pasos siguientes.</div>`;
+  }
+
   /* ---------- Tabla de referencia (Paso 3) ----------
      Ayuda visual: rango normal de SH/SC para el refrigerante y dispositivo
      de expansión seleccionados, antes de introducir ninguna medida. */
@@ -227,5 +253,5 @@
       </table>${nota}`;
   }
 
-  global.UI = { $, fx, guiaDispositivo, textoGuiaDispositivo, renderResultado, renderTablaReferencia, renderTablaComparativa };
+  global.UI = { $, fx, guiaDispositivo, textoGuiaDispositivo, renderResultado, renderResumenEquipo, renderTablaReferencia, renderTablaComparativa };
 })(window);

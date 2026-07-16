@@ -119,14 +119,14 @@
     const mi = $('modeloInt').value.trim();
     const me = $('modeloExt').value.trim();
     const hint = $('equipoLookupHint');
-    if (!mi && !me) { hint.innerHTML = ''; equipoActual = null; return; }
+    const resumen = $('equipoResumen');
+    if (!mi && !me) { hint.innerHTML = ''; if (resumen) resumen.innerHTML = ''; equipoActual = null; return; }
     hint.textContent = 'Buscando en nuestra base de datos…';
     EquipoDB.buscar(me || mi, mi, me).then(rec => {
       if (rec) {
         equipoActual = rec;
         const fecha = rec.fecha ? new Date(rec.fecha).toLocaleDateString('es-ES') : '';
-        hint.innerHTML = '✅ Equipo reconocido' + (fecha ? ' (ficha guardada el ' + fecha + ')' : '') +
-          '. Datos rellenados en el paso 2.';
+        hint.innerHTML = '✅ Equipo reconocido' + (fecha ? ' (ficha guardada el ' + fecha + ')' : '') + '.';
         if (rec.tipoMaquina) $('tipoEquipo').value = rec.tipoMaquina;
         if (rec.refrigerante) $('ref').value = rec.refrigerante;
         if (rec.dispositivo) $('dispositivo').value = rec.dispositivo;
@@ -134,8 +134,10 @@
         if (rec.cargaBase != null) $('cBase').value = rec.cargaBase;
         if (rec.longitudSinRecarga != null) $('cFree').value = rec.longitudSinRecarga;
         actualizarRefInfo(); actualizarGuiaDisp(); pintarCarga(); renderComparativa();
+        if (resumen) resumen.innerHTML = UI.renderResumenEquipo(rec);
       } else {
         equipoActual = null;
+        if (resumen) resumen.innerHTML = '';
         const q = encodeURIComponent(((me || '') + ' ' + (mi || '')).trim() + ' ficha técnica refrigerante carga gas');
         hint.innerHTML = 'No encontrado en nuestra base de datos. ' +
           '<a href="https://www.google.com/search?q=' + q + '" target="_blank" rel="noopener">Buscar en internet ↗</a>' +
@@ -172,6 +174,8 @@
     const hint = $('fichaHint');
     if (hint) hint.textContent = '✅ Ficha guardada en nuestra base de datos. La próxima vez que introduzcas este modelo se rellenará automáticamente.';
     renderComparativa();
+    const resumen = $('equipoResumen');
+    if (resumen) resumen.innerHTML = UI.renderResumenEquipo(rec);
   }
 
   /* ---------- Vista previa en vivo de SH/SC (para la tabla comparativa) ---------- */
