@@ -37,6 +37,13 @@
       </div>
       <button class="btn-primary" id="btnPaso1" disabled>Continuar</button>
       <div class="hint" style="margin-top:8px">No se permite el cálculo hasta confirmar todas las comprobaciones.</div>
+
+      <label style="margin-top:16px">Modelo unidad interior <span class="hint">(opcional)</span></label>
+      <input id="modeloInt" type="text" placeholder="p.ej. MSZ-AP25VG" autocomplete="off">
+      <label>Modelo unidad exterior <span class="hint">(opcional)</span></label>
+      <input id="modeloExt" type="text" placeholder="p.ej. MUZ-AP25VG" autocomplete="off">
+      <div class="hint" id="equipoLookupHint"></div>
+      <div class="hint">Si se reconoce el modelo, en el paso 2 se rellenan automáticamente el tipo de máquina, el refrigerante, el dispositivo de expansión, el fabricante, la carga base y la longitud máxima sin recarga.</div>
     </div>
 
     <!-- Paso 2: Equipo -->
@@ -67,6 +74,14 @@
       </select>
       <div class="hint" id="dispGuia"></div>
 
+      <label style="margin-top:14px">Fabricante</label>
+      <input id="fabricante" type="text" placeholder="p.ej. Mitsubishi Electric" autocomplete="off">
+
+      <div class="row" style="margin-top:10px">
+        <button class="btn-sec" id="btnGuardarFicha" style="flex:1">💾 Guardar ficha del equipo</button>
+      </div>
+      <div class="hint" id="fichaHint">Se guarda en nuestra base de datos local para reconocer este modelo automáticamente la próxima vez.</div>
+
       <div class="row">
         <button class="btn-sec" id="btnAtras2" style="flex:0 0 auto">← Atrás</button>
         <button class="btn-primary" id="btnPaso2" style="margin-top:0">Continuar</button>
@@ -76,6 +91,7 @@
     <!-- Paso 3: Funcionamiento -->
     <div class="card hidden" id="paso3">
       <h2>3 · Datos de funcionamiento</h2>
+      <div id="tablaRefBox"></div>
 
       <label>Presión de BAJA (aspiración)</label>
       <div class="row">
@@ -127,6 +143,8 @@
           <input id="cFree" type="number" inputmode="decimal" placeholder="ej. 5 (VRF: 0)">
         </div>
       </div>
+
+      <div id="tablaCompBox"></div>
 
       <label style="margin-top:14px">Tramos de línea de LÍQUIDO</label>
       <div class="hint">Añade un tramo por cada diámetro. Los g/m se calculan según Ø y refrigerante; edítalos si el fabricante da otros.</div>
@@ -232,6 +250,7 @@
 <script src="js/settings.js"></script>
 <script src="js/report.js"></script>
 <script src="js/storage.js"></script>
+<script src="js/equipoDB.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>
 </body>
